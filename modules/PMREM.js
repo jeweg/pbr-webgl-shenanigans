@@ -65,7 +65,7 @@ constructor(resolution)
         this.hammersleyPointsTexture.wrapT = THREE.RepeatWrapping;
         this.hammersleyPointsTexture.needsUpdate = true;
 
-        console.log(hammersleyData);
+        //console.log(hammersleyData);
     }
 
     /*
