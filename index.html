@@ -1,0 +1,474 @@
+<!DOCTYPE html>
+<html lang="en">
+	<head>
+		<title>Experimenting</title>
+		<meta charset=utf-8>
+		<meta name="viewport" content="width=device-width, user-scalable=no, minimum-scale=1.0, maximum-scale=1.0">
+		<style>
+			body {
+				background:#fff;
+				padding:0;
+				margin:0;
+				font-family: Arial, Helvetica, sans-serif;
+				font-weight: bold;
+				overflow:hidden;
+				text-align: center;
+			}
+			a { color: white }
+			#info { position: absolute; top: 10px; width: 100%; color: white;}
+			#container {
+				width: 100%;
+				height: 100%;
+			}
+		</style>
+	</head>
+	<body>
+		<div id="container"></div>
+		<div id="info">Experiment 2</div>
+<!--
+	TODO: a lot of the dot products might still be wrong because usually (what does this mean exactly?)
+	dot products are used as if they were implicitly clamped to zero. We don't do this all the time yet.
+
+	TODO: add smith/walter G. See math notes page 35 for references.
+
+	TODO: normalization of the brdf is ignored here (I think). This violates the priciple of conservation.
+	See https://seblagarde.wordpress.com/2011/08/17/hello-world/ for how to fix this.
+
+	See http://twvideo01.ubm-us.net/o1/vault/gdc2017/Presentations/Hammon_Earl_PBR_Diffuse_Lighting.pdf Sl 85 for
+	height-correlated smith.
+		/*
+		uniform sampler2D u_envMap;
+		uniform float u_exposure;
+		uniform float u_gamma;
+		uniform float u_envMapRotation;
+
+		varying vec3 v_pos_model;
+		varying vec3 v_pos_vc;
+
+		// v must be normalized!
+		#define M_PI 3.1415926535897932384626433832795
+		vec2 sampleBlinnNewellLatMap(vec3 v, float rotation)
+		{
+			// See http://www.reindelsoftware.com/Documents/Mapping/Mapping.html
+			return vec2(
+				(-atan(v.x, v.z) + u_envMapRotation) / (M_PI + M_PI),
+				(asin(v.y) + M_PI * 0.5) / M_PI
+			);
+		}
+
+		void main()
+		{
+			vec2 tc = sampleBlinnNewellLatMap(normalize(v_pos_model), u_envMapRotation);
+			vec3 linearColor = texture2D(u_envMap, tc).rgb;
+
+			// Adjust exposure and apply Reinhard tone mapping
+			linearColor *= u_exposure;
+			linearColor = linearColor / (vec3(1.0) + linearColor);
+
+			// Apply gamma correction.
+			// gamma 2.2 is the well-known sRGB approximation.
+			gl_FragColor = vec4(pow(linearColor, vec3(1.0 / u_gamma)), 1.0);
+		}
+		*/
+		-->
+		<!-- ==================================================================== -->
+
+		<script id="vshader_sky" type="x-shader/x-vertex">
+		varying vec3 v_pos_mc;
+		void main()
+		{
+			v_pos_mc = position;
+			gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+		}
+		</script>
+		<script id="fshader_sky" type="x-shader/x-fragment">
+		uniform samplerCube u_envMap;
+		uniform float u_exposure;
+		uniform float u_gamma;
+
+		varying vec3 v_pos_mc;
+
+		void main()
+		{
+			/*
+			vec3 linearColor = textureCube(u_envMap, v_pos_mc).rgb;
+			vec3 foo = (linearColor.r > 0.f || linearColor.g > 0.f || linearColor.b > 0.f) ? vec3(1) : vec3(0, 0.4f, 0);
+			gl_FragColor = vec4(foo, 1);
+			*/
+
+			vec3 linearColor;
+
+			// Note that we don't have to normalize the direction vector.
+			linearColor = textureCube(u_envMap, v_pos_mc).rgb;
+
+			// Apply Reinhard tone mapping
+			linearColor *= u_exposure;
+			linearColor = linearColor / (vec3(1.0) + linearColor);
+
+			// Apply gamma correction.
+			gl_FragColor = vec4(pow(linearColor, vec3(1.0 / u_gamma)), 1.0);
+		}
+		</script>
+
+		<!-- ==================================================================== -->
+
+		<script id="vertexShader" type="x-shader/x-vertex">
+		//precision mediump float;
+		//precision mediump int;
+
+		uniform float u_time;
+
+		varying vec3 v_pos_vc;
+		varying vec3 v_normal_vc;
+		varying vec2 v_uv;
+
+		void main()
+		{
+			v_normal_vc = (normalMatrix * normal.xyz).xyz;
+			v_uv = uv;
+
+			vec4 pos_vc = modelViewMatrix * vec4(position, 1.0);
+			v_pos_vc = pos_vc.xyz;
+			gl_Position = projectionMatrix * pos_vc;
+		}
+		</script>
+		<!-- ==================================================================== -->
+		<script id="fshader_preamble" type="x-shader/x-fragment">
+		//precision mediump float;
+		//precision mediump int;
+
+		#define M_PI 3.1415926535897932384626433832795
+
+		uniform mat3 u_normalViewToWorldMatrix;
+
+		uniform float u_time;
+		uniform vec3 u_baseColor;
+		uniform vec3 u_F0; // fresnel input
+		uniform float u_roughness; 
+		uniform float u_metalness; 
+		uniform float u_reflectivity; 
+		uniform float u_exposure;
+		uniform float u_gamma;
+		uniform bool u_debug_diffuseOnly;
+
+		struct MyLight {
+			float power;
+			vec3 color;
+			vec3 pos_vc;
+			float invSqrAttRadius; // 1.0 / pow(attRadius, 2)
+			float cosOuterAngle;
+			float cosInnerAngle;
+			float angleScale; // 1.0 / max(0.001, cosInnerAngle - cosOuterAngle);
+			float angleOffset; // -cosOuter * angleScale;
+			vec3 spotForward_vc;
+		};
+		uniform MyLight u_lights[NUM_LIGHTS];
+
+		uniform float u_iblFactor;
+		uniform samplerCube u_irradianceMap;
+		uniform samplerCube u_pmrem;
+
+		varying vec3 v_pos_vc;  // pos in view coords
+		varying vec3 v_normal_vc;  // normal in view (eye) coords
+		varying vec2 v_uv;  // uv (in model coords)
+
+		</script>
+		<!-- ==================================================================== -->
+		<script id="fshader_diffuse_lambert" type="x-shader/x-fragment">
+		vec3 diffuse(float n_dot_l, float n_dot_h, float h_dot_l, vec3 l, vec3 v, vec3 n)
+		{
+			return n_dot_l * u_baseColor / M_PI;
+		}
+		</script>
+		<!-- ==================================================================== -->
+		<script id="fshader_diffuse_burley" type="x-shader/x-fragment">
+		vec3 diffuse(float n_dot_l, float n_dot_h, float h_dot_l, vec3 l, vec3 v, vec3 n)
+		{
+			// Disney
+			// http://blog.selfshadow.com/publications/s2012-shading-course/burley/s2012_pbs_disney_brdf_notes_v3.pdf pg. 14
+			float F_D90 = 0.5 + 2.0 * u_roughness * h_dot_l * h_dot_l; // or roughness^2?
+			float n_dot_v = max(dot(n, v), 0.0);
+			return n_dot_l * u_baseColor / M_PI * (1.0 + (F_D90 - 1.0) * pow(abs(1.0 - n_dot_l), 5.0)) * (1.0 + (F_D90 - 1.0) * pow(1.0 - n_dot_v, 5.0));
+		}
+		</script>
+		<!-- ==================================================================== -->
+		<script id="fshader_diffuse_HammonEarl" type="x-shader/x-fragment">
+		vec3 diffuse(float n_dot_l, float n_dot_h, float h_dot_l, vec3 l, vec3 v, vec3 n)
+		{
+			// See http://twvideo01.ubm-us.net/o1/vault/gdc2017/Presentations/Hammon_Earl_PBR_Diffuse_Lighting.pdf slide 113.
+
+			float n_dot_v = dot(n, v);
+			float l_dot_v = dot(l, v); // I think this is supposed to remain non-clamped.
+
+			n_dot_v = clamp(n_dot_v, 0.0, 1.0);
+			//l_dot_v = clamp(l_dot_v, 0.0, 1.0);
+
+			float facing = 0.5 + 0.5 * l_dot_v;
+			float rough = facing * (0.9 - 0.4 * facing) * (0.5 + n_dot_h) / n_dot_h;
+			float smoothed = 1.05 * (1.0 - pow(max(0.0, 1.0 - n_dot_l), 5.0)) * (1.0 - pow(max(0.0, 1.0 - n_dot_v), 5.0));
+			float a = u_roughness * u_roughness;
+
+			float single = mix(smoothed, rough, a) / M_PI;
+
+			float multi = 0.1159 * a;
+			return n_dot_l *  u_baseColor * (single + u_baseColor * multi);
+		}
+		</script>
+		<!-- ==================================================================== -->
+		<script id="fshader_fresnel_none" type="x-shader/x-fragment">
+		vec3 F(vec3 F0, float h_dot_l)
+		{
+			return F0;
+		}
+		</script>
+		<!-- ==================================================================== -->
+		<script id="fshader_fresnel_schlick" type="x-shader/x-fragment">
+		vec3 F(vec3 F0, float h_dot_l)
+		{
+			// Note: if used outside micofacet BRDF, use dot(n, l).
+			// If used in microfacet BRDF, use dot(h, l) or dot(h, v).
+			// See https://en.wikipedia.org/wiki/Schlick%27s_approximation
+			return F0 + (1.0 - F0) * pow(1.0 - h_dot_l, 5.0);
+		}
+		</script>
+		<!-- ==================================================================== -->
+		<script id="fshader_fresnel_schlickUnreal4" type="x-shader/x-fragment">
+		vec3 F(vec3 F0, float h_dot_l)
+		{
+			// This replaces the 5th power by an allegedly faster approximation.
+			// See http://blog.selfshadow.com/publications/s2013-shading-course/karis/s2013_pbs_epic_notes_v2.pdf page 3
+			// https://seblagarde.wordpress.com/2012/06/03/spherical-gaussien-approximation-for-blinn-phong-phong-and-fresnel/
+			return F0 + (1.0 - F0) * exp2((-5.55473 * h_dot_l - 6.98316) * h_dot_l);
+		}
+		</script>
+		<!-- ==================================================================== -->
+		<script id="fshader_brdfD_GGX" type="x-shader/x-fragment">
+		float D(float roughness, float n_dot_h)
+		{
+			//float a = pow(roughness, 2.0);
+			//float a2 = pow(a, 2.0);
+
+			float a2 = pow(roughness, 4.0);
+			float t = n_dot_h * n_dot_h * (a2 - 1.0) + 1.0;
+			return a2 / (M_PI * t * t);
+		}
+		</script>
+		<!-- ==================================================================== -->
+		<script id="fshader_brdfD_BlinnPhong" type="x-shader/x-fragment">
+		float D(float roughness, float n_dot_h)
+		{
+			// See http://graphicrants.blogspot.de/2013/08/specular-brdf-reference.html
+			float a2 = pow(roughness, 4.0);
+			return pow(n_dot_h, 2.0 / a2 - 2.0) / (M_PI * a2);
+		}
+		</script>
+		<!-- ==================================================================== -->
+		<script id="fshader_brdfG_Smith" type="x-shader/x-fragment">
+		float G(float roughness, float n_dot_v, float n_dot_l, float h_dot_l)
+		{
+			float a = roughness * roughness;
+			float g1_L = n_dot_l * (1.0 - a) + a;
+			float g1_V = n_dot_v * (1.0 - a) + a;
+			return 1.0 / (( g1_L * g1_V + .0001) * 4.0 * M_PI);
+		}
+		</script>
+		<!-- ==================================================================== -->
+		<script id="fshader_brdfG_Smith_heightCorr" type="x-shader/x-fragment">
+		float G(float roughness, float n_dot_v, float n_dot_l, float h_dot_l)
+		{
+			float a = roughness * roughness;
+			float lambda_v = n_dot_l * sqrt((-n_dot_v * a + n_dot_v) * n_dot_v + a);
+			float lambda_l = n_dot_v * sqrt((-n_dot_l * a + n_dot_l) * n_dot_l + a);
+			return 0.5 / ((lambda_v + lambda_l + 0.000001) * M_PI);
+		}
+		</script>
+		<!-- ==================================================================== -->
+		<script id="fshader_brdfG_Implicit" type="x-shader/x-fragment">
+		float G(float roughness, float n_dot_v, float n_dot_l, float h_dot_l)
+		{
+			return n_dot_l / n_dot_v;
+		}
+		</script>
+		<!-- ==================================================================== -->
+		<script id="fshader_brdfG_SchlickUnreal4" type="x-shader/x-fragment">
+		float G(float roughness, float n_dot_v, float n_dot_l, float h_dot_l)
+		{
+			// Should only be used for analytical lights!
+			// See http://blog.selfshadow.com/publications/s2013-shading-course/karis/s2013_pbs_epic_notes_v2.pdf page 3.
+			// Note that this is not height-correlated.
+			float k = pow(roughness + 1.0, 2.0) / 8.0;
+			float G1_v = n_dot_v / (n_dot_v * (1.0 - k) + k);
+			float G1_l = n_dot_l / (n_dot_l * (1.0 - k) + k);
+			return G1_l * G1_v;
+		}
+		</script>
+		<!-- ==================================================================== -->
+		<script id="fshader_brdfG_Kelemen" type="x-shader/x-fragment">
+		float G(float roughness, float n_dot_v, float n_dot_l, float h_dot_l)
+		{
+			// TODO: this is wrong! this is an approximation of the cook-torrance G term
+			// including the (n*l)(n*v) denominator. Hence we must leave it out in the final computations.
+			// this might be true for other functions as well?.
+			return 1.0 / pow(h_dot_l, 2.0);
+		}
+		</script>
+		<!-- ==================================================================== -->
+		<script id="fshader_epilogue" type="x-shader/x-fragment">
+
+		float smoothDistanceAtt(float squaredDistance, float invSqrAttRadius)
+		{
+			float factor = squaredDistance * invSqrAttRadius;
+			float smoothFactor = clamp(1.0 - factor * factor, 0.0, 1.0);
+			return smoothFactor * smoothFactor;
+		}
+
+		float getDistanceAtt(vec3 unnormalizedLightVector, float invSqrAttRadius)
+		{
+			float sqrDist = dot(unnormalizedLightVector, unnormalizedLightVector);
+			float attenuation = 1.0 / max(sqrDist, 0.01 * 0.01);
+			attenuation *= smoothDistanceAtt(sqrDist, invSqrAttRadius);
+			return attenuation;
+		}
+
+		float getAngleAtt(vec3 normalizedLightVector, vec3 lightDir, float lightAngleScale, float lightAngleOffset)
+		{
+			float cd = dot(lightDir, normalizedLightVector);
+			float attenuation = clamp(cd * lightAngleScale + lightAngleOffset, 0.0, 1.0);
+			// smooth the transition
+			attenuation *= attenuation;
+			return attenuation;
+		}
+
+		void main()
+		{
+
+	/* TODO: (from qt5.9):
+    const float maxSpecPower = 999999.0;
+    const float minRoughness = sqrt(2.0 / (maxSpecPower + 2));
+	return max(roughness * roughness, minRoughness);
+	*/
+
+			vec3 n = normalize(v_normal_vc);
+			vec3 v = normalize(-v_pos_vc);
+
+			float n_dot_v = dot(n, v);
+			n_dot_v = max(n_dot_v, 0.0);
+
+			vec3 linearColor = vec3(0.0, 0.0, 0.0);
+
+			// Evaluate parametric light contributions.
+			for (int lighti = 0; lighti < NUM_LIGHTS; ++lighti)
+			{
+				if (u_lights[lighti].power > 0.0)
+				{
+					vec3 l_unnormalized = u_lights[lighti].pos_vc - v_pos_vc;
+					vec3 l = normalize(l_unnormalized);
+					vec3 h = normalize(l + v);
+
+					float n_dot_l = max(dot(n, l), 0.0);
+					float n_dot_h = max(dot(n, h), 0.0);
+					float h_dot_l = max(dot(h, l), 0.0);
+
+					float lightAttenuation = getDistanceAtt(l_unnormalized, u_lights[lighti].invSqrAttRadius);
+					float luminousPower = u_lights[lighti].power / (4.0 * M_PI);
+					vec3 lightColor = pow(u_lights[lighti].color, vec3(2.2)); // approx. sRGB -> linear
+					
+					// Spotlight logic is disabled for now. It doesn't work yet and I'm not sure we even want spotlights.
+					//attenuation *= getAngleAtt(l, u_lights[lighti].spotForward_vc, u_lights[lighti].angleScale, u_lights[lighti].angleOffset);
+
+					vec3 diff = (1.0 - u_metalness) * lightColor * diffuse(n_dot_l, n_dot_h, h_dot_l, l, v, n);
+
+					// The more it's a metal, the more we use the baseColor as fresnel,
+					// coloring the specular. 0.04 is a good fresnel base value for dielectrics.
+					vec3 F0 = mix(vec3(0.04), u_baseColor, u_metalness);
+					vec3 fresnel_microfacet = F(F0, h_dot_l);
+					float ndf = D(u_roughness, n_dot_h);
+					float geom = G(u_roughness, n_dot_v, n_dot_l, h_dot_l);
+					vec3 specular = lightColor * fresnel_microfacet * n_dot_l * geom * ndf;
+					//vec3 specular = lightColor * n_dot_l * geom * ndf;
+
+					/*
+https://computergraphics.stackexchange.com/questions/2285/how-to-properly-combine-the-diffuse-and-specular-terms
+// Assuming for example:
+//   diffuse = albedo / PI;
+//   specular = my_favorite_glossy_brdf(in_dir, out_dir, roughness);
+//   fresnel = f0 + (1.0 - f0) * pow(1.0 - dot(E, H), 5.0);
+//   total_surface_reflection = fresnel
+color = lightIntensity * dot(L, N) * Lerp(diffuse, specular, total_surface_reflection);
+
+*/
+#if 0
+
+					linearColor += lightAttenuation * luminousPower * mix(diff, specular, fresnel_microfacet);
+#else
+					
+
+					if (u_debug_diffuseOnly)
+					{
+						linearColor += lightAttenuation * luminousPower * diff;
+					}
+					else
+					{
+						// Blend, conserving the net energy.
+						linearColor += lightAttenuation * luminousPower * (specular + diff * (vec3(1.0) - specular));
+					}
+#endif
+				}
+			} // light loop
+
+			// Evaluate image-based lighting.
+			// TODO: possibly loop though env lights here, but we only use one env map here.
+			{
+				vec3 l = reflect(-v, n);
+				vec3 h = normalize(l + v);
+
+				float n_dot_l = max(dot(n, l), 0.0);
+				float n_dot_h = max(dot(n, h), 0.0);
+				float h_dot_l = max(dot(h, l), 0.0);
+
+				vec3 n_wc = u_normalViewToWorldMatrix * n;
+				vec3 diff = (1.0 - u_metalness) * u_baseColor * u_iblFactor * textureCube(u_irradianceMap, n_wc).rgb / M_PI;
+
+				vec3 l_wc = u_normalViewToWorldMatrix * l;
+				vec3 specular = textureCube(u_pmrem, l_wc).rgb;
+
+				if (u_debug_diffuseOnly)
+				{
+					linearColor += diff;
+				}
+				/*
+				else if (true)
+				{
+					// Testing hack: specular only
+					linearColor += specular;
+				}
+				*/
+				else
+				{
+					// Blend, conserving the net energy.
+					linearColor += specular + diff * (vec3(1.0) - specular);
+				}
+			}
+			
+			// Adjust exposure and apply Reinhard tone mapping
+			linearColor *= u_exposure;
+			linearColor = linearColor / (vec3(1.0) + linearColor);
+
+			// Apply gamma correction.
+			// gamma 2.2 is the well-known sRGB approximation.
+			gl_FragColor = vec4(pow(linearColor, vec3(1.0 / u_gamma)), 1.0);
+		}
+		</script>
+
+		<!-- ==================================================================== -->
+        <!--<script src="common/HDRLoader.js"></script>-->
+        <!--<script type="module" src="./common/CubeMapConverter.js"></script>-->
+        <!--<script src="common/DiffuseIrradianceGenerator.js"></script>-->
+		<!--<script src="common/PMREM.js"></script>-->
+		
+        <!--<script src="three.js/build/three.min.js"></script>-->
+
+		<script type="module" src="main.js"></script>
+
+	</body>
+</html>
