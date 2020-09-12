@@ -118,14 +118,17 @@
 
 		uniform float u_time;
 
-		varying vec3 v_pos_vc;
-		varying vec3 v_normal_vc;
-		varying vec2 v_uv;
+		varying vec3 v_pos_wc;  // pos in world coords
+		varying vec3 v_pos_vc;  // pos in view coords
+		varying vec3 v_normal_vc;  // normal in view (eye) coords
+		varying vec2 v_uv;  // uv (in model coords)
 
 		void main()
 		{
 			v_normal_vc = (normalMatrix * normal.xyz).xyz;
 			v_uv = uv;
+
+			v_pos_wc = (modelMatrix * vec4(position, 1.0)).xyz;
 
 			vec4 pos_vc = modelViewMatrix * vec4(position, 1.0);
 			v_pos_vc = pos_vc.xyz;
@@ -151,9 +154,10 @@
 		uniform float u_gamma;
 		uniform bool u_debug_diffuseOnly;
 
-		struct MyLight {
+		struct Light {
 			float power;
 			vec3 color;
+			vec3 pos_wc;
 			vec3 pos_vc;
 			float invSqrAttRadius; // 1.0 / pow(attRadius, 2)
 			float cosOuterAngle;
@@ -162,12 +166,19 @@
 			float angleOffset; // -cosOuter * angleScale;
 			vec3 spotForward_vc;
 		};
-		uniform MyLight u_lights[NUM_LIGHTS];
+		uniform Light u_lights[NUM_LIGHTS];
+
+		struct Sphere {
+			vec3 center_wc;
+			float radius;
+		};
+		uniform Sphere u_spheres[NUM_SPHERES];
 
 		uniform float u_iblFactor;
 		uniform samplerCube u_irradianceMap;
 		uniform samplerCube u_pmrem;
 
+		varying vec3 v_pos_wc;  // pos in world coords
 		varying vec3 v_pos_vc;  // pos in view coords
 		varying vec3 v_normal_vc;  // normal in view (eye) coords
 		varying vec2 v_uv;  // uv (in model coords)
@@ -339,14 +350,103 @@
 			return attenuation;
 		}
 
+		float hit_sphere(vec3 sphere_center, float sphere_radius, vec3 ray_origin, vec3 ray_direction) {
+			vec3 oc = ray_origin - sphere_center;
+			float a = dot(ray_direction, ray_direction);
+			float b = 2.0 * dot(oc, ray_direction);
+			float c = dot(oc, oc) - sphere_radius*sphere_radius;
+			float discriminant = b*b - 4.0*a*c;
+			if (discriminant < 0.0) {
+				return -1.0;
+			} else {
+				return (-b - sqrt(discriminant) ) / (2.0*a);
+			}
+		}
+
+
+		vec3 compute_light_contribution(int light_index, vec3 v, vec3 n, float n_dot_v) {
+			/*
+			if (light_index != 1) {
+				return vec3(0, 0, 0);
+			}
+			*/
+			if (u_lights[light_index].power < 0.001) {
+				return vec3(0, 0, 0);
+			}
+
+			vec3 l_unnormalized = u_lights[light_index].pos_vc - v_pos_vc;
+			vec3 l = normalize(l_unnormalized);
+
+			//==============>
+
+			float distance_to_light = length(l_unnormalized);
+			vec3 ray_origin = v_pos_wc;
+			vec3 ray_direction = normalize(u_lights[light_index].pos_wc - ray_origin);
+
+			for (int spherei = 0; spherei < NUM_SPHERES; ++spherei) {
+				float hit = hit_sphere(u_spheres[spherei].center_wc, u_spheres[spherei].radius, ray_origin, ray_direction);
+
+				if (hit >= 0.0 && hit <= distance_to_light) { return vec3(0, 0, 0);}
+			}
+
+			//<===============
+
+			vec3 h = normalize(l + v);
+
+			float n_dot_l = max(dot(n, l), 0.0);
+			float n_dot_h = max(dot(n, h), 0.0);
+			float h_dot_l = max(dot(h, l), 0.0);
+
+			float lightAttenuation = getDistanceAtt(l_unnormalized, u_lights[light_index].invSqrAttRadius);
+			float luminousPower = u_lights[light_index].power / (4.0 * M_PI);
+			vec3 lightColor = pow(u_lights[light_index].color, vec3(2.2)); // approx. sRGB -> linear
+			
+			// Spotlight logic is disabled for now. It doesn't work yet and I'm not sure we even want spotlights.
+			//attenuation *= getAngleAtt(l, u_lights[light_index].spotForward_vc, u_lights[light_index].angleScale, u_lights[lighti].angleOffset);
+
+			vec3 diff = (1.0 - u_metalness) * lightColor * diffuse(n_dot_l, n_dot_h, h_dot_l, l, v, n);
+
+			// The more it's a metal, the more we use the baseColor as fresnel,
+			// coloring the specular. 0.04 is a good fresnel base value for dielectrics.
+			vec3 F0 = mix(vec3(0.04), u_baseColor, u_metalness);
+			vec3 fresnel_microfacet = F(F0, h_dot_l);
+			float ndf = D(u_roughness, n_dot_h);
+			float geom = G(u_roughness, n_dot_v, n_dot_l, h_dot_l);
+			vec3 specular = lightColor * fresnel_microfacet * n_dot_l * geom * ndf;
+			//vec3 specular = lightColor * n_dot_l * geom * ndf;
+
+			/*
+			https://computergraphics.stackexchange.com/questions/2285/how-to-properly-combine-the-diffuse-and-specular-terms
+			// Assuming for example:
+			//   diffuse = albedo / PI;
+			//   specular = my_favorite_glossy_brdf(in_dir, out_dir, roughness);
+			//   fresnel = f0 + (1.0 - f0) * pow(1.0 - dot(E, H), 5.0);
+			//   total_surface_reflection = fresnel
+			color = lightIntensity * dot(L, N) * Lerp(diffuse, specular, total_surface_reflection);
+			*/
+
+#if 0
+			return lightAttenuation * luminousPower * mix(diff, specular, fresnel_microfacet);
+#else
+			if (u_debug_diffuseOnly)
+			{
+				return lightAttenuation * luminousPower * diff;
+			}
+			else
+			{
+				// Blend, conserving the net energy.
+				return lightAttenuation * luminousPower * (specular + diff * (vec3(1.0) - specular));
+			}
+#endif
+		}
+
 		void main()
 		{
-
-	/* TODO: (from qt5.9):
-    const float maxSpecPower = 999999.0;
-    const float minRoughness = sqrt(2.0 / (maxSpecPower + 2));
-	return max(roughness * roughness, minRoughness);
-	*/
+			/* TODO: (from qt5.9):
+			const float maxSpecPower = 999999.0;
+			const float minRoughness = sqrt(2.0 / (maxSpecPower + 2));
+			return max(roughness * roughness, minRoughness);
+			*/
 
 			vec3 n = normalize(v_normal_vc);
 			vec3 v = normalize(-v_pos_vc);
@@ -359,65 +459,10 @@
 			// Evaluate parametric light contributions.
 			for (int lighti = 0; lighti < NUM_LIGHTS; ++lighti)
 			{
-				if (u_lights[lighti].power > 0.0)
-				{
-					vec3 l_unnormalized = u_lights[lighti].pos_vc - v_pos_vc;
-					vec3 l = normalize(l_unnormalized);
-					vec3 h = normalize(l + v);
-
-					float n_dot_l = max(dot(n, l), 0.0);
-					float n_dot_h = max(dot(n, h), 0.0);
-					float h_dot_l = max(dot(h, l), 0.0);
-
-					float lightAttenuation = getDistanceAtt(l_unnormalized, u_lights[lighti].invSqrAttRadius);
-					float luminousPower = u_lights[lighti].power / (4.0 * M_PI);
-					vec3 lightColor = pow(u_lights[lighti].color, vec3(2.2)); // approx. sRGB -> linear
-					
-					// Spotlight logic is disabled for now. It doesn't work yet and I'm not sure we even want spotlights.
-					//attenuation *= getAngleAtt(l, u_lights[lighti].spotForward_vc, u_lights[lighti].angleScale, u_lights[lighti].angleOffset);
-
-					vec3 diff = (1.0 - u_metalness) * lightColor * diffuse(n_dot_l, n_dot_h, h_dot_l, l, v, n);
-
-					// The more it's a metal, the more we use the baseColor as fresnel,
-					// coloring the specular. 0.04 is a good fresnel base value for dielectrics.
-					vec3 F0 = mix(vec3(0.04), u_baseColor, u_metalness);
-					vec3 fresnel_microfacet = F(F0, h_dot_l);
-					float ndf = D(u_roughness, n_dot_h);
-					float geom = G(u_roughness, n_dot_v, n_dot_l, h_dot_l);
-					vec3 specular = lightColor * fresnel_microfacet * n_dot_l * geom * ndf;
-					//vec3 specular = lightColor * n_dot_l * geom * ndf;
-
-					/*
-https://computergraphics.stackexchange.com/questions/2285/how-to-properly-combine-the-diffuse-and-specular-terms
-// Assuming for example:
-//   diffuse = albedo / PI;
-//   specular = my_favorite_glossy_brdf(in_dir, out_dir, roughness);
-//   fresnel = f0 + (1.0 - f0) * pow(1.0 - dot(E, H), 5.0);
-//   total_surface_reflection = fresnel
-color = lightIntensity * dot(L, N) * Lerp(diffuse, specular, total_surface_reflection);
-
-*/
-#if 0
-
-					linearColor += lightAttenuation * luminousPower * mix(diff, specular, fresnel_microfacet);
-#else
-					
-
-					if (u_debug_diffuseOnly)
-					{
-						linearColor += lightAttenuation * luminousPower * diff;
-					}
-					else
-					{
-						// Blend, conserving the net energy.
-						linearColor += lightAttenuation * luminousPower * (specular + diff * (vec3(1.0) - specular));
-					}
-#endif
-				}
+				linearColor += compute_light_contribution(lighti, v, n, n_dot_v);
 			} // light loop
 
 			// Evaluate image-based lighting.
-			// TODO: possibly loop though env lights here, but we only use one env map here.
 			{
 				vec3 l = reflect(-v, n);
 				vec3 h = normalize(l + v);

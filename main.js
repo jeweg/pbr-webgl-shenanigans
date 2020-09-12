@@ -31,6 +31,7 @@ var currentEnvironment;
 var startTime = new Date();
 
 const NUM_LIGHTS = 4;
+const NUM_SPHERES = 9;
 const USE_ORBIT_CONTROLS = true;
 
 const impls_diffuse = {
@@ -96,6 +97,13 @@ const values_F0 = {
     'Silver': new THREE.Vector3(.95, .93, .88)
 };
 
+function transformedVector3(vec, mat)
+{
+    var p = new THREE.Vector3();
+    p.copy(vec);
+    p.applyMatrix4(mat);
+    return p;
+}
 
 class Environment 
 {
@@ -162,7 +170,7 @@ class Environment
 }
 
 
-function PunctualLight(params) //color, power, pos_wc)
+function PunctualLight(params) // color, power, pos_wc
 {
     params = params || {};
 
@@ -181,8 +189,21 @@ function PunctualLight(params) //color, power, pos_wc)
 
     // Mesh to represent the light in the scene. Not passed to the shaders
     // and not part of any lighting calculations.
-    this.visuMesh;
+    this.visuMesh = null;
 };
+
+
+function SphereParams(params) // pos_wc, radius
+{
+    params = params || {};
+
+    this.pos_wc = params.pos_wc !== undefined ? params.pos_wc : new THREE.Vector3();
+    this.radius = params.radius !== undefined ? params.radius : 1.0;
+
+    // Mesh to represent the light in the scene. Not passed to the shaders, of course.
+    this.visuMesh = null;
+};
+
 
 function Parameters()
 {
@@ -218,9 +239,22 @@ function Parameters()
             power: 1000,
             pos_wc: new THREE.Vector3(5, 6, -4)})
     ];
+
+    this.sphere_params = [];
+    for (let u = -1; u <= 1; ++u)
+    {
+        for (let v = -1; v <= 1; ++v)
+        {
+            this.sphere_params.push(new SphereParams({
+                pos_wc: new THREE.Vector3(u * 11, 0, v * 11),
+                radius: 3
+            }));
+        }
+    }
+
     // A Reinhard tone mapping exposure value of 2.5 looks similar to
     // Blender with the filmic blender addon and log encoding + base contrast.
-    this.exposure = 3.3;
+    this.exposure = 1.3;
     this.gamma = 2.2;
     this.environment = '';
     this.env_renderMode = 'irradiance';
@@ -368,10 +402,21 @@ function init()
             u_gamma: {},
             u_normalViewToWorldMatrix: new THREE.Matrix3(),
             u_lights: { value: [ 
-                { power:{},color:{},pos_vc:{},invSqrAttRadius:{},cosOuterAngle:{},cosInnerAngle:{},angleScale:{},angleOffset:{},spotForward_vc:{}},
-                { power:{},color:{},pos_vc:{},invSqrAttRadius:{},cosOuterAngle:{},cosInnerAngle:{},angleScale:{},angleOffset:{},spotForward_vc:{}},
-                { power:{},color:{},pos_vc:{},invSqrAttRadius:{},cosOuterAngle:{},cosInnerAngle:{},angleScale:{},angleOffset:{},spotForward_vc:{}},
-                { power:{},color:{},pos_vc:{},invSqrAttRadius:{},cosOuterAngle:{},cosInnerAngle:{},angleScale:{},angleOffset:{},spotForward_vc:{}}
+                { power:{},color:{},pos_wc:{},pos_vc:{},invSqrAttRadius:{},cosOuterAngle:{},cosInnerAngle:{},angleScale:{},angleOffset:{},spotForward_vc:{}},
+                { power:{},color:{},pos_wc:{},pos_vc:{},invSqrAttRadius:{},cosOuterAngle:{},cosInnerAngle:{},angleScale:{},angleOffset:{},spotForward_vc:{}},
+                { power:{},color:{},pos_wc:{},pos_vc:{},invSqrAttRadius:{},cosOuterAngle:{},cosInnerAngle:{},angleScale:{},angleOffset:{},spotForward_vc:{}},
+                { power:{},color:{},pos_wc:{},pos_vc:{},invSqrAttRadius:{},cosOuterAngle:{},cosInnerAngle:{},angleScale:{},angleOffset:{},spotForward_vc:{}}
+            ]},
+            u_spheres: { value: [
+                { center_wc:{}, radius:{} },
+                { center_wc:{}, radius:{} },
+                { center_wc:{}, radius:{} },
+                { center_wc:{}, radius:{} },
+                { center_wc:{}, radius:{} },
+                { center_wc:{}, radius:{} },
+                { center_wc:{}, radius:{} },
+                { center_wc:{}, radius:{} },
+                { center_wc:{}, radius:{} },
             ]},
             u_iblFactor: {},
             u_irradianceMap: {},
@@ -383,6 +428,7 @@ function init()
     });
     updateUniforms();
 
+    /*
     for (let u = -1; u <= 1; ++u)
     {
         for (let v = -1; v <= 1; ++v)
@@ -391,15 +437,15 @@ function init()
             mesh.translateX(u * 11);
             mesh.translateZ(v * 11);
             scene.add(mesh);
-
         }
     }
+    */
 
-    mesh = new THREE.Mesh(new THREE.PlaneGeometry(50, 50, 10, 10), material);
-    mesh.rotateX(-3.14159265 * 0.5);
-    mesh.translateZ(-5);
+    let plane_mesh = new THREE.Mesh(new THREE.PlaneGeometry(50, 50, 10, 10), material);
+    plane_mesh.rotateX(-3.14159265 * 0.5);
+    plane_mesh.translateZ(-5);
     //mesh.rotateX(1);
-    scene.add(mesh);
+    scene.add(plane_mesh);
 
     // GUI //////////////////////////////////////////////////////////////////////
 
@@ -476,7 +522,6 @@ function init()
         folder.addColor(parameters.lights[i], 'color'); 
         folder.close();
     }
-    //lightingFolder.open();
 
     /////////////////////////////////////////////////////////////////////////////
 
@@ -489,6 +534,7 @@ function updateFShader()
 {
     var fshader = '';
     fshader += '#define NUM_LIGHTS ' + NUM_LIGHTS + '\n';
+    fshader += '#define NUM_SPHERES ' + NUM_SPHERES + '\n';
     
     fshader += readElemText('fshader_preamble');
     fshader += readElemText(impls_diffuse[parameters.impl_diffuse].elem);
@@ -546,18 +592,34 @@ function updateUniforms()
     // three.js itself gets the view matrix from camera.matrixWorldInverse.
     // To get the normals from view coords to world coords we must compute
     // transpose(inverse(inverse(viewMatrix))) = transpose(viewMatrix)
-    var m = new THREE.Matrix3();
+    let m = new THREE.Matrix3();
     m.setFromMatrix4(camera.matrixWorldInverse);
     m.transpose();
     material.uniforms['u_normalViewToWorldMatrix'].value = m;
 
-    for (var i = 0; i < NUM_LIGHTS; ++i)
+    for (let i = 0; i < NUM_SPHERES; ++i)
     {
-        var p = parameters.lights[i];
-        var uni = material.uniforms['u_lights'].value[i]; // The target uniform block
+        let p = parameters.sphere_params[i];
+
+        if (p.visuMesh == null) {
+            p.visuMesh = new THREE.Mesh(new THREE.SphereGeometry(p.radius, 48, 32), material);
+            scene.add(p.visuMesh)
+        }
+        p.visuMesh.position.copy(p.pos_wc);
+        p.visuMesh.updateMatrix();
+
+        let uni = material.uniforms['u_spheres'].value[i]; // The target uniform block
+        uni.center_wc = p.pos_wc; //transformedVector3(p.pos_wc, camera.matrixWorldInverse);
+        uni.radius = p.radius;
+    }
+
+    for (let i = 0; i < NUM_LIGHTS; ++i)
+    {
+        let p = parameters.lights[i];
+        let uni = material.uniforms['u_lights'].value[i]; // The target uniform block
 
         const time_scale = 2;
-        var new_pos = p.pos_wc;
+        let new_pos = p.pos_wc;
         if (i == 0) {
             new_pos.x += Math.sin(0.7 + time * 0.5 * time_scale) * 0.19;
             new_pos.z += Math.sin(1.17 + time * 0.3 * time_scale) * 0.21;
@@ -572,17 +634,12 @@ function updateUniforms()
             new_pos.z += Math.sin(2.8 + time * 0.6 * time_scale) * 0.18;
         }
 
-        // Create visualisation mesh if it doesn't exist.
-        //if (p.visuMesh == null) 
-        {
-            if (p.visuMesh) { scene.remove(p.visuMesh); }
-
+        if (p.visuMesh == null) {
             p.visuMesh = new THREE.Mesh(new THREE.SphereGeometry(0.3, 8, 8), new THREE.MeshBasicMaterial());
             scene.add(p.visuMesh)
-            p.visuMesh.position.copy(new_pos);
-            //p.visuMesh.position.copy(p.pos_wc); //!!!
-            p.visuMesh.updateMatrix();
         }
+        p.visuMesh.position.copy(new_pos);
+        p.visuMesh.updateMatrix();
         p.visuMesh.visible = p.enabled;
         p.visuMesh.material.color.copy(new THREE.Color(p.color));
 
@@ -599,16 +656,8 @@ function updateUniforms()
         uni.cosOuterAngle = Math.cos(p.spotOuterAngle_deg * DegToRadFactor);
         uni.cosInnerAngle = Math.cos(p.spotInnerAngle_deg * DegToRadFactor);
 
-        function transformedVector3(vec, mat)
-        {
-            var p = new THREE.Vector3();
-            p.copy(vec);
-            p.applyMatrix4(mat);
-            return p;
-        }
-        
+        uni.pos_wc = new_pos;
         uni.pos_vc = transformedVector3(new_pos, camera.matrixWorldInverse);
-        //uni.pos_vc = transformedVector3(p.pos_wc, camera.matrixWorldInverse); // !!!
         uni.spotForward_vc = transformedVector3(p.spotForward_wc, camera.matrixWorldInverse);
 
         // Precomputed terms.
