@@ -222,21 +222,21 @@ function Parameters()
         new PunctualLight({
             color: '#ffffff',
             power: 15000,
-            pos_wc: new THREE.Vector3(-15, 8, 10)
+            pos_wc: new THREE.Vector3(-12, 8, 8)
             }),
         new PunctualLight({
             color: '#ff7000', 
             power: 40000,
-            pos_wc: new THREE.Vector3(10, -4, 7)
+            pos_wc: new THREE.Vector3(8, -4, 7)
             }),
         new PunctualLight({
             color: '#005000',
-            power: 500,
+            power: 3000,
             pos_wc: new THREE.Vector3(1, 4, 6)
             }),
         new PunctualLight({
             color: '#4080ff',
-            power: 1000,
+            power: 5000,
             pos_wc: new THREE.Vector3(5, 6, -4)})
     ];
 

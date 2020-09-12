@@ -365,11 +365,9 @@
 
 
 		vec3 compute_light_contribution(int light_index, vec3 v, vec3 n, float n_dot_v) {
-			/*
-			if (light_index != 1) {
+			if (light_index == 0) {
 				return vec3(0, 0, 0);
 			}
-			*/
 			if (u_lights[light_index].power < 0.001) {
 				return vec3(0, 0, 0);
 			}
