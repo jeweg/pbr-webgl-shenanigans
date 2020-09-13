@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="en">
 	<head>
-		<title>Experimenting</title>
+		<title>PBR Experiments</title>
 		<meta charset=utf-8>
 		<meta name="viewport" content="width=device-width, user-scalable=no, minimum-scale=1.0, maximum-scale=1.0">
 		<style>
@@ -45,6 +45,8 @@
 		varying vec3 v_pos_model;
 		varying vec3 v_pos_vc;
 
+		// Sample directly from lat-long map.
+		// In the attic b/c we convert everything to cube maps at the moment.
 		// v must be normalized!
 		#define M_PI 3.1415926535897932384626433832795
 		vec2 sampleBlinnNewellLatMap(vec3 v, float rotation)
@@ -153,6 +155,8 @@
 		uniform float u_exposure;
 		uniform float u_gamma;
 		uniform bool u_debug_diffuseOnly;
+		uniform bool u_enable_shadows;
+		uniform bool u_smooth_shadows;
 
 		struct Light {
 			float power;
@@ -350,7 +354,7 @@
 			return attenuation;
 		}
 
-		float hit_sphere(vec3 sphere_center, float sphere_radius, vec3 ray_origin, vec3 ray_direction) {
+		float closest_hit_sphere(vec3 sphere_center, float sphere_radius, vec3 ray_origin, vec3 ray_direction) {
 			vec3 oc = ray_origin - sphere_center;
 			float a = dot(ray_direction, ray_direction);
 			float b = 2.0 * dot(oc, ray_direction);
@@ -363,6 +367,17 @@
 			}
 		}
 
+		#define INF 9999999.0
+		float closest_hit_all_spheres(vec3 ray_origin, vec3 ray_direction) {
+			float result = INF;
+			for (int spherei = 0; spherei < NUM_SPHERES; ++spherei) {
+				float hit = closest_hit_sphere(u_spheres[spherei].center_wc, u_spheres[spherei].radius, ray_origin, ray_direction);
+				if ( hit > 0.0 ) {
+					result = min(result, hit);
+				}
+			}
+			return result;
+		}
 
 		vec3 compute_light_contribution(int light_index, vec3 v, vec3 n, float n_dot_v) {
 			if (light_index == 0) {
@@ -375,19 +390,53 @@
 			vec3 l_unnormalized = u_lights[light_index].pos_vc - v_pos_vc;
 			vec3 l = normalize(l_unnormalized);
 
-			//==============>
+			//--------------------------------------------------------------------------
+			// Raytraced shadows
 
-			float distance_to_light = length(l_unnormalized);
-			vec3 ray_origin = v_pos_wc;
-			vec3 ray_direction = normalize(u_lights[light_index].pos_wc - ray_origin);
+			float occlusion = 0.0;
+			if (u_enable_shadows) {
 
-			for (int spherei = 0; spherei < NUM_SPHERES; ++spherei) {
-				float hit = hit_sphere(u_spheres[spherei].center_wc, u_spheres[spherei].radius, ray_origin, ray_direction);
+				float distance_to_light = length(l_unnormalized);
+				vec3 ray_origin = v_pos_wc;
+				vec3 ray_direction = normalize(u_lights[light_index].pos_wc - ray_origin);
 
-				if (hit >= 0.0 && hit <= distance_to_light) { return vec3(0, 0, 0);}
+				if (u_smooth_shadows) {
+
+					// Going very simple here for now. Eight taps per light, uniformly distributed on a sphere (for which we use cube vertices).
+
+					const float eps = 0.15f;
+					float hit_dist;
+					hit_dist = closest_hit_all_spheres(ray_origin, normalize(u_lights[light_index].pos_wc + vec3(-eps, -eps, -eps) - ray_origin));
+					if (hit_dist <= distance_to_light) { occlusion += 0.125; }
+					hit_dist = closest_hit_all_spheres(ray_origin, normalize(u_lights[light_index].pos_wc + vec3(-eps, -eps, +eps) - ray_origin));
+					if (hit_dist <= distance_to_light) { occlusion += 0.125; }
+					hit_dist = closest_hit_all_spheres(ray_origin, normalize(u_lights[light_index].pos_wc + vec3(-eps, +eps, -eps) - ray_origin));
+					if (hit_dist <= distance_to_light) { occlusion += 0.125; }
+					hit_dist = closest_hit_all_spheres(ray_origin, normalize(u_lights[light_index].pos_wc + vec3(-eps, +eps, +eps) - ray_origin));
+					if (hit_dist <= distance_to_light) { occlusion += 0.125; }
+					hit_dist = closest_hit_all_spheres(ray_origin, normalize(u_lights[light_index].pos_wc + vec3(+eps, -eps, -eps) - ray_origin));
+					if (hit_dist <= distance_to_light) { occlusion += 0.125; }
+					hit_dist = closest_hit_all_spheres(ray_origin, normalize(u_lights[light_index].pos_wc + vec3(+eps, -eps, +eps) - ray_origin));
+					if (hit_dist <= distance_to_light) { occlusion += 0.125; }
+					hit_dist = closest_hit_all_spheres(ray_origin, normalize(u_lights[light_index].pos_wc + vec3(+eps, +eps, -eps) - ray_origin));
+					if (hit_dist <= distance_to_light) { occlusion += 0.125; }
+					hit_dist = closest_hit_all_spheres(ray_origin, normalize(u_lights[light_index].pos_wc + vec3(+eps, +eps, +eps) - ray_origin));
+					if (hit_dist <= distance_to_light) { occlusion += 0.125; }
+
+				} else {
+
+					// One tap only.
+					float hit_dist = closest_hit_all_spheres(ray_origin, normalize(u_lights[light_index].pos_wc - ray_origin));
+					if (hit_dist <= distance_to_light) { occlusion = 1.0; }
+
+				}
+
+				if (occlusion >= 0.99) {
+					return vec3(0.0);
+				}
 			}
 
-			//<===============
+			//--------------------------------------------------------------------------
 
 			vec3 h = normalize(l + v);
 
@@ -433,7 +482,7 @@
 			else
 			{
 				// Blend, conserving the net energy.
-				return lightAttenuation * luminousPower * (specular + diff * (vec3(1.0) - specular));
+				return (1.0 - occlusion) * (lightAttenuation * luminousPower * (specular + diff * (vec3(1.0) - specular)));
 			}
 #endif
 		}
