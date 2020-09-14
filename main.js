@@ -216,7 +216,7 @@ function Parameters()
     this.reflectivity = .0;
     this.debug_diffuseOnly = false;
     this.enable_shadows = true;
-    this.smooth_shadows = true;
+    this.smooth_shadows = false;
     this.lights = [
         new PunctualLight({
             color: '#ffffff',
