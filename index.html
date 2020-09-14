@@ -205,7 +205,7 @@
 		<script id="fshader_diffuse_lambert" type="x-shader/x-fragment">
 		vec3 diffuse(float n_dot_l, float n_dot_h, float h_dot_l, vec3 l, vec3 v, vec3 n)
 		{
-			return n_dot_l * u_baseColor / M_PI;
+			return max(0.0, n_dot_l) * u_baseColor / M_PI;
 		}
 		</script>
 		<!-- ==================================================================== -->
@@ -216,6 +216,7 @@
 			// http://blog.selfshadow.com/publications/s2012-shading-course/burley/s2012_pbs_disney_brdf_notes_v3.pdf pg. 14
 			float F_D90 = 0.5 + 2.0 * u_roughness * h_dot_l * h_dot_l; // or roughness^2?
 			float n_dot_v = max(dot(n, v), 0.0);
+			n_dot_l = max(n_dot_l, 0.0);
 			return n_dot_l * u_baseColor / M_PI * (1.0 + (F_D90 - 1.0) * pow(abs(1.0 - n_dot_l), 5.0)) * (1.0 + (F_D90 - 1.0) * pow(1.0 - n_dot_v, 5.0));
 		}
 		</script>
@@ -225,20 +226,20 @@
 		{
 			// See http://twvideo01.ubm-us.net/o1/vault/gdc2017/Presentations/Hammon_Earl_PBR_Diffuse_Lighting.pdf slide 113.
 
-			float n_dot_v = dot(n, v);
-			float l_dot_v = dot(l, v); // I think this is supposed to remain non-clamped.
+			n_dot_l = max(n_dot_l, 0.0);
 
-			n_dot_v = clamp(n_dot_v, 0.0, 1.0);
-			//l_dot_v = clamp(l_dot_v, 0.0, 1.0);
+			float n_dot_v = dot(n, v);
+			float l_dot_v = dot(l, v); 
 
 			float facing = 0.5 + 0.5 * l_dot_v;
+
 			float rough = facing * (0.9 - 0.4 * facing) * (0.5 + n_dot_h) / n_dot_h;
-			float smoothed = 1.05 * (1.0 - pow(max(0.0, 1.0 - n_dot_l), 5.0)) * (1.0 - pow(max(0.0, 1.0 - n_dot_v), 5.0));
+			float smoothed = 1.05 * (1.0 - pow(1.0 - n_dot_l, 5.0)) * (1.0 - pow(1.0 - n_dot_v, 5.0));
+
 			float a = u_roughness * u_roughness;
-
 			float single = mix(smoothed, rough, a) / M_PI;
-
 			float multi = 0.1159 * a;
+
 			return n_dot_l *  u_baseColor * (single + u_baseColor * multi);
 		}
 		</script>
@@ -287,7 +288,7 @@
 		{
 			// See http://graphicrants.blogspot.de/2013/08/specular-brdf-reference.html
 			float a2 = pow(roughness, 4.0);
-			return pow(n_dot_h, 2.0 / a2 - 2.0) / (M_PI * a2);
+			return pow(max(n_dot_h, 0.0), 2.0 / a2 - 2.0) / (M_PI * a2);
 		}
 		</script>
 		<!-- ==================================================================== -->
@@ -304,6 +305,7 @@
 		<script id="fshader_brdfG_Smith_heightCorr" type="x-shader/x-fragment">
 		float G(float roughness, float n_dot_v, float n_dot_l, float h_dot_l)
 		{
+			n_dot_l = max(n_dot_l, 0.0);
 			float a = roughness * roughness;
 			float lambda_v = n_dot_l * sqrt((-n_dot_v * a + n_dot_v) * n_dot_v + a);
 			float lambda_l = n_dot_v * sqrt((-n_dot_l * a + n_dot_l) * n_dot_l + a);
@@ -324,6 +326,9 @@
 			// Should only be used for analytical lights!
 			// See http://blog.selfshadow.com/publications/s2013-shading-course/karis/s2013_pbs_epic_notes_v2.pdf page 3.
 			// Note that this is not height-correlated.
+
+			n_dot_l = max(n_dot_l, 0.0);
+
 			float k = pow(roughness + 1.0, 2.0) / 8.0;
 			float G1_v = n_dot_v / (n_dot_v * (1.0 - k) + k);
 			float G1_l = n_dot_l / (n_dot_l * (1.0 - k) + k);
@@ -334,9 +339,10 @@
 		<script id="fshader_brdfG_Kelemen" type="x-shader/x-fragment">
 		float G(float roughness, float n_dot_v, float n_dot_l, float h_dot_l)
 		{
-			// TODO: this is wrong! this is an approximation of the cook-torrance G term
+			// TODO: this computation is wrong! It's supposed to be an approximation of the cook-torrance G term
 			// including the (n*l)(n*v) denominator. Hence we must leave it out in the final computations.
-			// this might be true for other functions as well?.
+
+			h_dot_l = max(h_dot_l, 0.0);
 			return 1.0 / pow(h_dot_l, 2.0);
 		}
 		</script>
@@ -454,9 +460,14 @@
 
 			vec3 h = normalize(l + v);
 
-			float n_dot_l = max(dot(n, l), 0.0);
-			float n_dot_h = max(dot(n, h), 0.0);
-			float h_dot_l = max(dot(h, l), 0.0);
+			// This is awkward -- some algorithms assume clamed dot products, some assumes they're not clampled.
+			// Unfortunately, this is not well advertised.
+
+			//float n_dot_l = max(dot(n, l), 0.0);
+
+			float n_dot_l = dot(n, l);
+			float n_dot_h = dot(n, h);
+			float h_dot_l = dot(h, l);
 
 			float lightAttenuation = getDistanceAtt(l_unnormalized, u_lights[light_index].invSqrAttRadius);
 			float luminousPower = u_lights[light_index].power / (4.0 * M_PI);
