@@ -2,8 +2,9 @@
 
 Meshes rendered through rasterization, shadows use raytracing towards the lights.
 
-Explores
+Implements/explores
 * Physically-based rendering and its various approaches and approximations 
+    * Roughness-metalness material parametrization 
     * Analytic physics-based lights
     * Additional image-based HDR lighting
 * Simple raytracing for (smooth) shadows
