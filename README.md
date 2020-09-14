@@ -1,5 +1,7 @@
 # PBR Experiments
 
+[> WebGL Demo <](https://weggemann.de/pbr/)
+
 Meshes rendered through rasterization, shadows use raytracing towards the lights.
 
 Implements/explores
@@ -42,5 +44,5 @@ Instead I've built my own tools:
 Shadows are done with a single (or 8 against the vertices of a small cube around the lights when smooth shadows enabled) shadow ray(s) per light, intersection against the perfect sphere equations.
 
 Status:
-* Very much unoptimized code. The goal here was to collect proof-of-concepts.
+* Very much unoptimized shader code. The goal here was to collect proofs-of-concept.
 * No specular environment reflection yet. We really want explicit roughness-based mipmap level selection for this which WebGL didn't have at the time. Might come back to this as time allows.
