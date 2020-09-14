@@ -7,24 +7,37 @@
 		<style>
 			body {
 				background:#fff;
+				color:#004;
 				padding:0;
 				margin:0;
-				font-family: Arial, Helvetica, sans-serif;
-				font-weight: bold;
 				overflow:hidden;
 				text-align: center;
+				font-family: Arial, Helvetica, sans-serif;
+				font-weight: bold;
 			}
 			a { color: white }
-			#info { position: absolute; top: 10px; width: 100%; color: white;}
+			#info {
+				position: absolute;
+				top: 10px;
+				width: 100%;
+			}
 			#container {
 				width: 100%;
 				height: 100%;
 			}
+			#github-ribbon {
+				position: fixed;
+				top: 0;
+				left: 0;
+			}
+
 		</style>
 	</head>
 	<body>
 		<div id="container"></div>
 		<div id="info"><a href="https://github.com/jeweg/pbr-webgl-shenanigans">PBR Experiment</a></div>
+		<div id="github-ribbon"><a href="https://github.com/jeweg/pbr-webgl-shenanigans"><img loading="lazy" width="149" height="149" src="https://github.blog/wp-content/uploads/2008/12/forkme_left_green_007200.png?resize=149%2C149" class="attachment-full size-full" alt="Fork me on GitHub" data-recalc-dims="1"></a></div>
+
 <!--
 	TODO: a lot of the dot products might still be wrong because usually (what does this mean exactly?)
 	dot products are used as if they were implicitly clamped to zero. We don't do this all the time yet.
