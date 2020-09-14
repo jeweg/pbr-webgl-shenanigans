@@ -354,6 +354,7 @@
 			return attenuation;
 		}
 
+		// Thanks to Peter Shirley.
 		float closest_hit_sphere(vec3 sphere_center, float sphere_radius, vec3 ray_origin, vec3 ray_direction) {
 			vec3 oc = ray_origin - sphere_center;
 			float a = dot(ray_direction, ray_direction);
@@ -551,14 +552,6 @@
 			gl_FragColor = vec4(pow(linearColor, vec3(1.0 / u_gamma)), 1.0);
 		}
 		</script>
-
-		<!-- ==================================================================== -->
-        <!--<script src="common/HDRLoader.js"></script>-->
-        <!--<script type="module" src="./common/CubeMapConverter.js"></script>-->
-        <!--<script src="common/DiffuseIrradianceGenerator.js"></script>-->
-		<!--<script src="common/PMREM.js"></script>-->
-		
-        <!--<script src="three.js/build/three.min.js"></script>-->
 
 		<script type="module" src="main.js"></script>
 

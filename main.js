@@ -1,4 +1,3 @@
-// Prefer the minified version for load times?
 import * as THREE from './three.js/build/three.module.js';
 
 import Stats from './three.js/examples/jsm/libs/stats.module.js';
