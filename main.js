@@ -193,11 +193,8 @@ function PunctualLight(params) // color, power, pos_wc
 function SphereParams(params) // pos_wc, radius
 {
     params = params || {};
-
     this.pos_wc = params.pos_wc !== undefined ? params.pos_wc : new THREE.Vector3();
     this.radius = params.radius !== undefined ? params.radius : 1.0;
-
-    // Mesh to represent the light in the scene. Not passed to the shaders, of course.
     this.visuMesh = null;
 };
 
@@ -209,11 +206,11 @@ function Parameters()
     this.impl_BRDF_D = 'GGX';
     this.impl_BRDF_F = 'Schlick (Unreal4 optim)';
     this.baseColor = '#b2e6fc';
-    //this.baseColor = '#168979';
     this.F0 = 'Iron';
     this.roughness = .2;
     this.metalness = .0;
     this.reflectivity = .0;
+    this.animated = true;
     this.debug_diffuseOnly = false;
     this.enable_shadows = true;
     this.smooth_shadows = false;
@@ -251,8 +248,8 @@ function Parameters()
         }
     }
 
-    // A Reinhard tone mapping exposure value of 2.5 looks similar to
-    // Blender with the filmic blender addon and log encoding + base contrast.
+    // Note: A Reinhard tone mapping exposure value of 2.5 looks similar to
+    // Blender with the filmic blender addon (core in 2.8+) and log encoding + base contrast.
     this.exposure = 1.3;
     this.gamma = 2.2;
     this.environment = '';
@@ -291,7 +288,6 @@ function setCurrentEnvironment(name)
 function init()
 {
     scene = new THREE.Scene();
-
     parameters = new Parameters();
 
     renderer = new THREE.WebGLRenderer({
@@ -314,11 +310,7 @@ function init()
     container.appendChild(stats.domElement);
 
     camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
-
-    //camera.position.set(0, 0, 20);
     camera.position.set(-43, 8, -30)
-
-
     camera.updateMatrix();
     camera.lookAt(new THREE.Vector3(0, 0, 0));
 
@@ -328,7 +320,6 @@ function init()
     blackTexture.format = THREE.RGBAFormat;
     blackTexture.generateMipmaps = false;
     blackTexture.needsUpdate = true;
-    //delete data;
 
     // A separate scene for the environment rendering (a sky box)
     {
@@ -392,7 +383,7 @@ function init()
         uniforms: {
             u_time: { type: "f", value: 0.0 },
             u_baseColor: { type: "v3", value: new THREE.Vector3(parameters.baseColor) },
-            u_lightPos_vc: { type: "v3", value: new THREE.Vector3(-15, 0, -5) },
+            //u_lightPos_vc: { type: "v3", value: new THREE.Vector3(-15, 0, -5) },
             u_F0: { type: "v3" },
             u_roughness: { type: "f" },
             u_metalness: { type: "f" },
@@ -429,19 +420,6 @@ function init()
     });
     updateUniforms();
 
-    /*
-    for (let u = -1; u <= 1; ++u)
-    {
-        for (let v = -1; v <= 1; ++v)
-        {
-            var mesh = new THREE.Mesh(new THREE.SphereGeometry(3, 48, 32), material);
-            mesh.translateX(u * 11);
-            mesh.translateZ(v * 11);
-            scene.add(mesh);
-        }
-    }
-    */
-
     let plane_mesh = new THREE.Mesh(new THREE.PlaneGeometry(50, 50, 10, 10), material);
     plane_mesh.rotateX(-3.14159265 * 0.5);
     plane_mesh.translateZ(-5);
@@ -471,6 +449,7 @@ function init()
             console.log(camera.position);
         }},
         'camera_info');
+    gui.add(parameters, 'animated');
     gui.add(parameters, 'debug_diffuseOnly');
 
     gui.add(parameters, 'exposure', 0.1, 20.0);
@@ -580,8 +559,10 @@ function gammaToLinear(color, gamma)
 
 function updateUniforms()
 {
-    var time = (new Date() - startTime) * .001;
-
+    let time = 0;
+    if (parameters.animated)  {
+        time = (new Date() - startTime) * .001;
+    }
     material.uniforms['u_time'].value = time;
     material.uniforms['u_baseColor'].value = gammaToLinear(parameters.baseColor, 2.2);
     material.uniforms['u_F0'].value = values_F0[parameters.F0];
@@ -617,9 +598,11 @@ function updateUniforms()
         p.visuMesh.updateMatrix();
 
         let uni = material.uniforms['u_spheres'].value[i]; // The target uniform block
-        uni.center_wc = p.pos_wc; //transformedVector3(p.pos_wc, camera.matrixWorldInverse);
+        uni.center_wc = p.pos_wc;
         uni.radius = p.radius;
     }
+
+    //console.info("time: " + time);
 
     for (let i = 0; i < NUM_LIGHTS; ++i)
     {
@@ -628,18 +611,20 @@ function updateUniforms()
 
         const time_scale = 2;
         let new_pos = p.pos_wc;
-        if (i == 0) {
-            new_pos.x += Math.sin(0.7 + time * 0.5 * time_scale) * 0.19;
-            new_pos.z += Math.sin(1.17 + time * 0.3 * time_scale) * 0.21;
-        } else if (i == 1) {
-            new_pos.x += Math.sin(0.27 + time * 0.8 * time_scale) * 0.13;
-            new_pos.z += Math.sin(1.07 + time * 0.2 * time_scale) * 0.17;
-        } else if (i == 2) {
-            new_pos.x += Math.sin(0.55 + time * 0.3 * time_scale) * 0.18;
-            new_pos.z += Math.sin(1.8 + time * 0.7 * time_scale) * 0.27;
-        } else if (i == 3) {
-            new_pos.x += Math.sin(3.05 + time * 0.7 * time_scale) * 0.08;
-            new_pos.z += Math.sin(2.8 + time * 0.6 * time_scale) * 0.18;
+        if (parameters.animated) {
+            if (i == 0) {
+                new_pos.x += Math.sin(0.7 + time * 0.5 * time_scale) * 0.19;
+                new_pos.z += Math.sin(1.17 + time * 0.3 * time_scale) * 0.21;
+            } else if (i == 1) {
+                new_pos.x += Math.sin(0.27 + time * 0.8 * time_scale) * 0.13;
+                new_pos.z += Math.sin(1.07 + time * 0.2 * time_scale) * 0.17;
+            } else if (i == 2) {
+                new_pos.x += Math.sin(0.55 + time * 0.3 * time_scale) * 0.18;
+                new_pos.z += Math.sin(1.8 + time * 0.7 * time_scale) * 0.27;
+            } else if (i == 3) {
+                new_pos.x += Math.sin(3.05 + time * 0.7 * time_scale) * 0.08;
+                new_pos.z += Math.sin(2.8 + time * 0.6 * time_scale) * 0.18;
+            }
         }
 
         if (p.visuMesh == null) {
@@ -647,6 +632,7 @@ function updateUniforms()
             scene.add(p.visuMesh)
         }
         p.visuMesh.position.copy(new_pos);
+        //p.visuMesh.position.copy(p.pos_wc);
         p.visuMesh.updateMatrix();
         p.visuMesh.visible = p.enabled;
         p.visuMesh.material.color.copy(new THREE.Color(p.color));
@@ -665,7 +651,9 @@ function updateUniforms()
         uni.cosInnerAngle = Math.cos(p.spotInnerAngle_deg * DegToRadFactor);
 
         uni.pos_wc = new_pos;
+        //uni.pos_wc = p.pos_wc;
         uni.pos_vc = transformedVector3(new_pos, camera.matrixWorldInverse);
+        //uni.pos_vc = transformedVector3(p.pos_wc, camera.matrixWorldInverse);
         uni.spotForward_vc = transformedVector3(p.spotForward_wc, camera.matrixWorldInverse);
 
         // Precomputed terms.
@@ -718,7 +706,7 @@ function animate()
                 {
                     var i = Number(parameters.env_renderMode.substr(9, 1));
                     i = Math.min(i, currentEnvironment.pmrem.length - 1);
-                    //console.log(parameters.env_renderMode.substr(9, 1),'Showing prefiltered radiance mipmap', i);
+                    console.log(parameters.env_renderMode.substr(9, 1),'Showing prefiltered radiance mipmap', i);
                     envMaterial.uniforms['u_envMap'].value = currentEnvironment.pmrem[i];
                 }
                 break;
