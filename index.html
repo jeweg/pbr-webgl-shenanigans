@@ -460,11 +460,6 @@
 
 			vec3 h = normalize(l + v);
 
-			// This is awkward -- some algorithms assume clamed dot products, some assumes they're not clampled.
-			// Unfortunately, this is not well advertised.
-
-			//float n_dot_l = max(dot(n, l), 0.0);
-
 			float n_dot_l = dot(n, l);
 			float n_dot_h = dot(n, h);
 			float h_dot_l = dot(h, l);
@@ -514,12 +509,6 @@
 
 		void main()
 		{
-			/* TODO: (from qt5.9):
-			const float maxSpecPower = 999999.0;
-			const float minRoughness = sqrt(2.0 / (maxSpecPower + 2));
-			return max(roughness * roughness, minRoughness);
-			*/
-
 			vec3 n = normalize(v_normal_vc);
 			vec3 v = normalize(-v_pos_vc);
 
