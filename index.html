@@ -38,56 +38,6 @@
 		<div id="info"><a href="https://github.com/jeweg/pbr-webgl-shenanigans">PBR Experiment</a></div>
 		<div id="github-ribbon"><a href="https://github.com/jeweg/pbr-webgl-shenanigans"><img loading="lazy" width="149" height="149" src="https://github.blog/wp-content/uploads/2008/12/forkme_left_green_007200.png?resize=149%2C149" class="attachment-full size-full" alt="Fork me on GitHub" data-recalc-dims="1"></a></div>
 
-<!--
-	TODO: a lot of the dot products might still be wrong because usually (what does this mean exactly?)
-	dot products are used as if they were implicitly clamped to zero. We don't do this all the time yet.
-
-	TODO: add smith/walter G. See math notes page 35 for references.
-
-	TODO: normalization of the brdf is ignored here (I think). This violates the priciple of conservation.
-	See https://seblagarde.wordpress.com/2011/08/17/hello-world/ for how to fix this.
-
-	See http://twvideo01.ubm-us.net/o1/vault/gdc2017/Presentations/Hammon_Earl_PBR_Diffuse_Lighting.pdf Sl 85 for
-	height-correlated smith.
-		/*
-		uniform sampler2D u_envMap;
-		uniform float u_exposure;
-		uniform float u_gamma;
-		uniform float u_envMapRotation;
-
-		varying vec3 v_pos_model;
-		varying vec3 v_pos_vc;
-
-		// Sample directly from lat-long map.
-		// In the attic b/c we convert everything to cube maps at the moment.
-		// v must be normalized!
-		#define M_PI 3.1415926535897932384626433832795
-		vec2 sampleBlinnNewellLatMap(vec3 v, float rotation)
-		{
-			// See http://www.reindelsoftware.com/Documents/Mapping/Mapping.html
-			return vec2(
-				(-atan(v.x, v.z) + u_envMapRotation) / (M_PI + M_PI),
-				(asin(v.y) + M_PI * 0.5) / M_PI
-			);
-		}
-
-		void main()
-		{
-			vec2 tc = sampleBlinnNewellLatMap(normalize(v_pos_model), u_envMapRotation);
-			vec3 linearColor = texture2D(u_envMap, tc).rgb;
-
-			// Adjust exposure and apply Reinhard tone mapping
-			linearColor *= u_exposure;
-			linearColor = linearColor / (vec3(1.0) + linearColor);
-
-			// Apply gamma correction.
-			// gamma 2.2 is the well-known sRGB approximation.
-			gl_FragColor = vec4(pow(linearColor, vec3(1.0 / u_gamma)), 1.0);
-		}
-		*/
-		-->
-		<!-- ==================================================================== -->
-
 		<script id="vshader_sky" type="x-shader/x-vertex">
 		varying vec3 v_pos_mc;
 		void main()
@@ -400,7 +350,6 @@
 			return result;
 		}
 
-//#if 0
 		// From http://byteblacksmith.com/improvements-to-the-canonical-one-liner-glsl-rand-for-opengl-es-2-0
 		highp float rand(vec2 co)
 		{
@@ -411,7 +360,6 @@
 			highp float sn= mod(dt,3.14);
 			return fract(sin(sn) * c);
 		}
-//#endif
 
 		vec3 compute_light_contribution(int light_index, vec3 v, vec3 n, float n_dot_v) {
 			if (u_lights[light_index].power < 0.001) {
@@ -442,7 +390,7 @@
 					float offset = 0.25f;
 					if (u_stochastic_shadows) {
 						vec2 randomness = vec2(rand(gl_FragCoord.xy * v_pos_wc.xy), rand(gl_FragCoord.xy));
-						offset += randomness.x * 0.35f;
+						offset += (randomness.x - 0.5) * 0.35;
 					}
 
 					float hit_dist;
@@ -466,7 +414,15 @@
 				} else {
 
 					// One tap only.
-					float hit_dist = closest_hit_all_spheres(ray_origin, normalize(u_lights[light_index].pos_wc - ray_origin));
+
+					vec3 light_pos = u_lights[light_index].pos_wc;
+
+					if (u_stochastic_shadows) {
+						vec2 randomness = vec2(rand(gl_FragCoord.xy * v_pos_wc.xy), rand(gl_FragCoord.xy));
+						light_pos += vec3(randomness.xy - vec2(0.5, 0.5), fract(randomness.x * randomness.y) - 0.5) * vec3(1);
+					}
+
+					float hit_dist = closest_hit_all_spheres(ray_origin, normalize(light_pos - ray_origin));
 					if (hit_dist <= distance_to_light) { occlusion = 1.0; }
 
 				}
