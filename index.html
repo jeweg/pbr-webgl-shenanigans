@@ -170,6 +170,7 @@
 		uniform bool u_debug_diffuseOnly;
 		uniform bool u_enable_shadows;
 		uniform bool u_smooth_shadows;
+		uniform bool u_stochastic_shadows;
 
 		struct Light {
 			float power;
@@ -399,10 +400,20 @@
 			return result;
 		}
 
+//#if 0
+		// From http://byteblacksmith.com/improvements-to-the-canonical-one-liner-glsl-rand-for-opengl-es-2-0
+		highp float rand(vec2 co)
+		{
+			highp float a = 12.9898;
+			highp float b = 78.233;
+			highp float c = 43758.5453;
+			highp float dt= dot(co.xy ,vec2(a,b));
+			highp float sn= mod(dt,3.14);
+			return fract(sin(sn) * c);
+		}
+//#endif
+
 		vec3 compute_light_contribution(int light_index, vec3 v, vec3 n, float n_dot_v) {
-			if (light_index == 0) {
-				return vec3(0, 0, 0);
-			}
 			if (u_lights[light_index].power < 0.001) {
 				return vec3(0, 0, 0);
 			}
@@ -416,31 +427,40 @@
 			float occlusion = 0.0;
 			if (u_enable_shadows) {
 
+				const float LIGHT_HALF_EXTENT = 0.25f;
+				const float LIGHT_RANDOM_RADIUS = 0.125f;
+
 				float distance_to_light = length(l_unnormalized);
 				vec3 ray_origin = v_pos_wc;
 				vec3 ray_direction = normalize(u_lights[light_index].pos_wc - ray_origin);
 
 				if (u_smooth_shadows) {
 
-					// Going very simple here for now. Eight taps per light, uniformly distributed on a sphere (for which we use cube vertices).
+					// Going very simple here for now. Eight taps per light, uniformly distributed on a sphere,
+					// in other words, we sample at cube vertices.
 
-					const float eps = 0.15f;
+					float offset = 0.25f;
+					if (u_stochastic_shadows) {
+						vec2 randomness = vec2(rand(gl_FragCoord.xy * v_pos_wc.xy), rand(gl_FragCoord.xy));
+						offset += randomness.x * 0.35f;
+					}
+
 					float hit_dist;
-					hit_dist = closest_hit_all_spheres(ray_origin, normalize(u_lights[light_index].pos_wc + vec3(-eps, -eps, -eps) - ray_origin));
+					hit_dist = closest_hit_all_spheres(ray_origin, normalize(u_lights[light_index].pos_wc + vec3(-offset, -offset, -offset) - ray_origin));
 					if (hit_dist <= distance_to_light) { occlusion += 0.125; }
-					hit_dist = closest_hit_all_spheres(ray_origin, normalize(u_lights[light_index].pos_wc + vec3(-eps, -eps, +eps) - ray_origin));
+					hit_dist = closest_hit_all_spheres(ray_origin, normalize(u_lights[light_index].pos_wc + vec3(-offset, -offset, +offset) - ray_origin));
 					if (hit_dist <= distance_to_light) { occlusion += 0.125; }
-					hit_dist = closest_hit_all_spheres(ray_origin, normalize(u_lights[light_index].pos_wc + vec3(-eps, +eps, -eps) - ray_origin));
+					hit_dist = closest_hit_all_spheres(ray_origin, normalize(u_lights[light_index].pos_wc + vec3(-offset, +offset, -offset) - ray_origin));
 					if (hit_dist <= distance_to_light) { occlusion += 0.125; }
-					hit_dist = closest_hit_all_spheres(ray_origin, normalize(u_lights[light_index].pos_wc + vec3(-eps, +eps, +eps) - ray_origin));
+					hit_dist = closest_hit_all_spheres(ray_origin, normalize(u_lights[light_index].pos_wc + vec3(-offset, +offset, +offset) - ray_origin));
 					if (hit_dist <= distance_to_light) { occlusion += 0.125; }
-					hit_dist = closest_hit_all_spheres(ray_origin, normalize(u_lights[light_index].pos_wc + vec3(+eps, -eps, -eps) - ray_origin));
+					hit_dist = closest_hit_all_spheres(ray_origin, normalize(u_lights[light_index].pos_wc + vec3(+offset, -offset, -offset) - ray_origin));
 					if (hit_dist <= distance_to_light) { occlusion += 0.125; }
-					hit_dist = closest_hit_all_spheres(ray_origin, normalize(u_lights[light_index].pos_wc + vec3(+eps, -eps, +eps) - ray_origin));
+					hit_dist = closest_hit_all_spheres(ray_origin, normalize(u_lights[light_index].pos_wc + vec3(+offset, -offset, +offset) - ray_origin));
 					if (hit_dist <= distance_to_light) { occlusion += 0.125; }
-					hit_dist = closest_hit_all_spheres(ray_origin, normalize(u_lights[light_index].pos_wc + vec3(+eps, +eps, -eps) - ray_origin));
+					hit_dist = closest_hit_all_spheres(ray_origin, normalize(u_lights[light_index].pos_wc + vec3(+offset, +offset, -offset) - ray_origin));
 					if (hit_dist <= distance_to_light) { occlusion += 0.125; }
-					hit_dist = closest_hit_all_spheres(ray_origin, normalize(u_lights[light_index].pos_wc + vec3(+eps, +eps, +eps) - ray_origin));
+					hit_dist = closest_hit_all_spheres(ray_origin, normalize(u_lights[light_index].pos_wc + vec3(+offset, +offset, +offset) - ray_origin));
 					if (hit_dist <= distance_to_light) { occlusion += 0.125; }
 
 				} else {

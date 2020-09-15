@@ -214,25 +214,26 @@ function Parameters()
     this.debug_diffuseOnly = false;
     this.enable_shadows = true;
     this.smooth_shadows = false;
+    this.stochastic_shadows = true;
     this.lights = [
         new PunctualLight({
-            color: '#ffffff',
-            power: 15000,
+            color: '#d97878',
+            power: 27000,
             pos_wc: new THREE.Vector3(-12, 8, 8)
             }),
         new PunctualLight({
             color: '#ff7000', 
-            power: 40000,
+            power: 18520,
             pos_wc: new THREE.Vector3(8, -4, 7)
             }),
         new PunctualLight({
             color: '#005000',
-            power: 3000,
+            power: 43213,
             pos_wc: new THREE.Vector3(1, 4, 6)
             }),
         new PunctualLight({
             color: '#4080ff',
-            power: 5000,
+            power: 17397,
             pos_wc: new THREE.Vector3(5, 6, -4)})
     ];
 
@@ -413,7 +414,8 @@ function init()
             u_pmrem: {},
             u_debug_diffuseOnly: {},
             u_enable_shadows: {},
-            u_smooth_shadows: {}
+            u_smooth_shadows: {},
+            u_stochastic_shadows: {}
         },
         vertexShader: readElemText('vertexShader'),
         fragmentShader: currentCombinedFShader
@@ -458,6 +460,7 @@ function init()
     var shadowFolder = gui.addFolder('Shadows');
     shadowFolder.add(parameters, 'enable_shadows');
     shadowFolder.add(parameters, 'smooth_shadows');
+    shadowFolder.add(parameters, 'stochastic_shadows');
     shadowFolder.open();
 
     var envFolder = gui.addFolder('Environment');
@@ -574,6 +577,7 @@ function updateUniforms()
     material.uniforms['u_debug_diffuseOnly'].value = parameters.debug_diffuseOnly;
     material.uniforms['u_enable_shadows'].value = parameters.enable_shadows;
     material.uniforms['u_smooth_shadows'].value = parameters.smooth_shadows;
+    material.uniforms['u_stochastic_shadows'].value = parameters.stochastic_shadows;
     material.uniforms['u_iblFactor'].value = parameters.env_strength;
     material.uniforms['u_irradianceMap'].value = currentEnvironment ? currentEnvironment.iem : blackTexture;
     material.uniforms['u_pmrem'].value = currentEnvironment && currentEnvironment.pmrem ? currentEnvironment.pmrem[0].texture : blackTexture;
