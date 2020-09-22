@@ -1,5 +1,5 @@
 # PBR Experiments
-
+[<img src="https://github.com/jeweg/pbr-webgl-shenanigans/raw/master/pbr-screenshot.png">](https://weggemann.de/pbr/)
 [> WebGL Demo <](https://weggemann.de/pbr/)
 
 Meshes rendered through rasterization, shadows use raytracing towards the lights.
